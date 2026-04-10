@@ -119,7 +119,6 @@
     .btn:active { transform: scale(0.97); }
     .btn.secondary { background: #444; }
 
-    /* Modal 說明彈窗 */
     #modal-overlay {
       display: none;
       position: fixed;
@@ -178,7 +177,6 @@
 
   <div id="image-container">
     <img id="preview" alt="健檢報告" />
-    <!-- 標籤會動態插入這裡 -->
   </div>
 </div>
 
@@ -187,10 +185,8 @@
   <button class="btn secondary" id="reset-btn" style="display:none" onclick="resetApp()">🔄 重新掃描</button>
 </footer>
 
-<!-- 隱藏的 input 讓手機可以拍照或選照片 -->
 <input type="file" id="file-input" accept="image/*" capture="environment" style="display:none" onchange="handleFile(event)" />
 
-<!-- 說明彈窗 -->
 <div id="modal-overlay">
   <div id="modal">
     <h2 id="modal-en"></h2>
@@ -201,14 +197,8 @@
 </div>
 
 <script>
-// ==========================================
-// 🔑 你的 Google Vision API 金鑰
-// ==========================================
 const API_KEY = 'AIzaSyCw_6UnvjCmeUd-sLmaSWFrMQWrgff9i_8';
 
-// ==========================================
-// 健檢項目資料（從 data.json 整合進來）
-// ==========================================
 const healthItems = [
   { cn: "身高體重", en: "Height and Weight", info: "Measurement of body stature and mass to calculate BMI. (測量身體維度以評估發育與 BMI。)" },
   { cn: "心電圖", en: "Electrocardiogram (ECG/EKG)", info: "A test that records the electrical activity of your heart. (記錄心臟電訊號以檢查異常心律。)" },
@@ -221,19 +211,16 @@ const healthItems = [
   { cn: "眼壓", en: "Intraocular Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
 ];
 
-// ==========================================
-// 主要功能
-// ==========================================
-
 function triggerCamera() {
   document.getElementById('file-input').click();
 }
 
 function resetApp() {
-  document.getElementById('image-container').style.display = 'none';
+  const container = document.getElementById('image-container');
+  container.style.display = 'none';
+  container.style.height = '';
   document.getElementById('placeholder').style.display = 'block';
   document.getElementById('reset-btn').style.display = 'none';
-  // 清除所有標籤
   document.querySelectorAll('.tag').forEach(t => t.remove());
 }
 
@@ -241,23 +228,17 @@ async function handleFile(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // 顯示預覽圖
   const url = URL.createObjectURL(file);
   const imgEl = document.getElementById('preview');
   imgEl.src = url;
 
   document.getElementById('placeholder').style.display = 'none';
-  document.getElementById('image-container').style.display = 'block';
   document.getElementById('reset-btn').style.display = 'flex';
-
-  // 清除舊標籤
   document.querySelectorAll('.tag').forEach(t => t.remove());
 
-  // 顯示 loading
   document.getElementById('loading').style.display = 'flex';
   document.getElementById('image-container').style.display = 'none';
 
-  // 等圖片載入完成，取得真實尺寸
   await new Promise(resolve => {
     imgEl.onload = resolve;
     if (imgEl.complete) resolve();
@@ -266,7 +247,6 @@ async function handleFile(event) {
   const realW = imgEl.naturalWidth;
   const realH = imgEl.naturalHeight;
 
-  // 呼叫 Google Vision API
   try {
     const base64 = await fileToBase64(file);
     const tags = await callVisionApi(base64, realW, realH);
@@ -274,10 +254,10 @@ async function handleFile(event) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('image-container').style.display = 'block';
 
-    // 等畫面渲染後再放標籤（確保 img 尺寸正確）
-    requestAnimationFrame(() => {
+    // 等圖片完全渲染後再放標籤
+    setTimeout(() => {
       renderTags(tags, imgEl, realW, realH);
-    });
+    }, 300);
 
   } catch(e) {
     document.getElementById('loading').style.display = 'none';
@@ -285,7 +265,6 @@ async function handleFile(event) {
     alert('辨識失敗，請確認網路連線或 API 金鑰是否正確。\n錯誤：' + e.message);
   }
 
-  // 重置 input 讓同一張圖可以重新選
   event.target.value = '';
 }
 
@@ -373,28 +352,31 @@ function extractTags(fullTextAnnotation, realW, realH) {
 function renderTags(tags, imgEl, realW, realH) {
   const container = document.getElementById('image-container');
 
-  // 計算圖片實際渲染尺寸（保持比例）
-  const containerW = container.offsetWidth;
-  const scale = containerW / realW;
-  const renderedH = realH * scale;
+  // 取得圖片在螢幕上實際渲染的寬高
+  const renderedW = imgEl.offsetWidth;
+  const renderedH = imgEl.offsetHeight;
 
-  // 強制 container 高度對齊圖片
+  // 計算圖片在 container 內置中時的偏移量
+  const offsetX = (container.offsetWidth - renderedW) / 2;
+  const offsetY = (container.offsetHeight - renderedH) / 2;
+
+  // 讓 container 高度貼合圖片
   container.style.height = renderedH + 'px';
 
   for (const tag of tags) {
     const tagEl = document.createElement('div');
     tagEl.className = 'tag';
     tagEl.textContent = tag.en;
-    tagEl.style.left = (tag.xRatio * 100) + '%';
-    tagEl.style.top = (tag.yRatio * renderedH) + 'px';
+
+    // 用實際渲染尺寸精準換算標籤位置
+    tagEl.style.left = (offsetX + tag.xRatio * renderedW) + 'px';
+    tagEl.style.top = (offsetY + tag.yRatio * renderedH) + 'px';
+
     tagEl.addEventListener('click', () => showModal(tag));
     container.appendChild(tagEl);
   }
 }
 
-// ==========================================
-// 說明彈窗
-// ==========================================
 function showModal(tag) {
   document.getElementById('modal-en').textContent = tag.en;
   document.getElementById('modal-cn').textContent = '中文項目：' + tag.cn;
@@ -406,7 +388,6 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.remove('show');
 }
 
-// 點擊背景關閉
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
