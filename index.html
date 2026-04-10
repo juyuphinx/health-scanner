@@ -45,7 +45,7 @@
 
     #placeholder .icon { font-size: 60px; margin-bottom: 10px; }
 
-    #image-container {
+    #image-wrapper {
       position: relative;
       display: none;
       width: 100%;
@@ -54,6 +54,7 @@
 
     #preview {
       width: 100%;
+      height: auto;
       display: block;
       border-radius: 8px;
     }
@@ -62,9 +63,9 @@
       position: absolute;
       background: rgba(0, 137, 123, 0.92);
       color: white;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
-      padding: 4px 8px;
+      padding: 3px 7px;
       border-radius: 4px;
       border: 1.5px solid white;
       transform: translate(-50%, -50%);
@@ -72,9 +73,10 @@
       white-space: nowrap;
       box-shadow: 0 2px 6px rgba(0,0,0,0.5);
       transition: background 0.2s;
+      z-index: 10;
     }
 
-    .tag:hover { background: rgba(0,105,92,0.95); }
+    .tag:active { background: rgba(0,105,92,0.95); }
 
     #loading {
       display: none;
@@ -175,7 +177,7 @@
     <div>AI 辨識分析中...</div>
   </div>
 
-  <div id="image-container">
+  <div id="image-wrapper">
     <img id="preview" alt="健檢報告" />
   </div>
 </div>
@@ -200,15 +202,15 @@
 const API_KEY = 'AIzaSyCw_6UnvjCmeUd-sLmaSWFrMQWrgff9i_8';
 
 const healthItems = [
-  { cn: "身高體重", en: "Height and Weight", info: "Measurement of body stature and mass to calculate BMI. (測量身體維度以評估發育與 BMI。)" },
-  { cn: "心電圖", en: "Electrocardiogram (ECG/EKG)", info: "A test that records the electrical activity of your heart. (記錄心臟電訊號以檢查異常心律。)" },
-  { cn: "骨質密度", en: "Bone Mineral Density (BMD)", info: "Measures bone strength to assess risk of osteoporosis. (測量骨骼強度以評估骨質疏鬆風險。)" },
-  { cn: "血壓", en: "Blood Pressure Measurement", info: "Checks the force of blood against artery walls to detect hypertension. (測量血液對血管壁的壓力以偵測高血壓。)" },
+  { cn: "身高體重", en: "Height & Weight", info: "Measurement of body stature and mass to calculate BMI. (測量身體維度以評估發育與 BMI。)" },
+  { cn: "心電圖", en: "ECG / EKG", info: "A test that records the electrical activity of your heart. (記錄心臟電訊號以檢查異常心律。)" },
+  { cn: "骨質密度", en: "Bone Density (BMD)", info: "Measures bone strength to assess risk of osteoporosis. (測量骨骼強度以評估骨質疏鬆風險。)" },
+  { cn: "血壓", en: "Blood Pressure", info: "Checks the force of blood against artery walls to detect hypertension. (測量血液對血管壁的壓力以偵測高血壓。)" },
   { cn: "視力檢查", en: "Vision Test", info: "Evaluates visual clarity and detects vision problems. (評估視力清晰度並檢測視覺問題。)" },
   { cn: "胸部X光", en: "Chest X-ray", info: "Examines lungs and chest structures for infections or abnormalities. (檢查肺部與胸腔結構是否有感染或異常。)" },
   { cn: "腹部超音波", en: "Abdominal Ultrasound", info: "Uses sound waves to visualize abdominal organs like the liver and kidneys. (利用聲波觀察肝臟、腎臟等腹部器官。)" },
-  { cn: "肺功能檢查", en: "Pulmonary Function Test", info: "Evaluates lung capacity and airflow to assess respiratory health. (評估肺活量與氣流以了解呼吸系統健康。)" },
-  { cn: "眼壓", en: "Intraocular Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
+  { cn: "肺功能檢查", en: "Pulmonary Function", info: "Evaluates lung capacity and airflow to assess respiratory health. (評估肺活量與氣流以了解呼吸系統健康。)" },
+  { cn: "眼壓", en: "Eye Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
 ];
 
 function triggerCamera() {
@@ -216,9 +218,7 @@ function triggerCamera() {
 }
 
 function resetApp() {
-  const container = document.getElementById('image-container');
-  container.style.display = 'none';
-  container.style.height = '';
+  document.getElementById('image-wrapper').style.display = 'none';
   document.getElementById('placeholder').style.display = 'block';
   document.getElementById('reset-btn').style.display = 'none';
   document.querySelectorAll('.tag').forEach(t => t.remove());
@@ -230,18 +230,18 @@ async function handleFile(event) {
 
   const url = URL.createObjectURL(file);
   const imgEl = document.getElementById('preview');
-  imgEl.src = url;
 
   document.getElementById('placeholder').style.display = 'none';
   document.getElementById('reset-btn').style.display = 'flex';
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('image-wrapper').style.display = 'none';
   document.querySelectorAll('.tag').forEach(t => t.remove());
 
-  document.getElementById('loading').style.display = 'flex';
-  document.getElementById('image-container').style.display = 'none';
+  imgEl.src = url;
 
   await new Promise(resolve => {
     imgEl.onload = resolve;
-    if (imgEl.complete) resolve();
+    if (imgEl.complete && imgEl.naturalWidth > 0) resolve();
   });
 
   const realW = imgEl.naturalWidth;
@@ -252,17 +252,16 @@ async function handleFile(event) {
     const tags = await callVisionApi(base64, realW, realH);
 
     document.getElementById('loading').style.display = 'none';
-    document.getElementById('image-container').style.display = 'block';
+    document.getElementById('image-wrapper').style.display = 'block';
 
     // 等圖片完全渲染後再放標籤
-    setTimeout(() => {
-      renderTags(tags, imgEl, realW, realH);
-    }, 300);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    renderTags(tags, imgEl);
 
   } catch(e) {
     document.getElementById('loading').style.display = 'none';
-    document.getElementById('image-container').style.display = 'block';
-    alert('辨識失敗，請確認網路連線或 API 金鑰是否正確。\n錯誤：' + e.message);
+    document.getElementById('image-wrapper').style.display = 'block';
+    alert('辨識失敗：' + e.message);
   }
 
   event.target.value = '';
@@ -292,7 +291,7 @@ async function callVisionApi(base64, realW, realH) {
     }
   );
 
-  if (!res.ok) throw new Error('API 回應錯誤：' + res.status);
+  if (!res.ok) throw new Error('API 錯誤：' + res.status);
 
   const data = await res.json();
   const response = data.responses?.[0];
@@ -317,11 +316,12 @@ function extractTags(fullTextAnnotation, realW, realH) {
       }
 
       const vertices = paragraph.boundingBox?.vertices;
-      if (!vertices) continue;
+      if (!vertices || vertices.length < 4) continue;
 
       let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
       for (const v of vertices) {
-        const x = v.x || 0, y = v.y || 0;
+        const x = v.x || 0;
+        const y = v.y || 0;
         if (x < minX) minX = x;
         if (y < minY) minY = y;
         if (x > maxX) maxX = x;
@@ -335,6 +335,7 @@ function extractTags(fullTextAnnotation, realW, realH) {
         if (!tagged.has(item.cn) && item.cn && lineText.includes(item.cn)) {
           tagged.add(item.cn);
           tags.push({
+            // 儲存比例值（0~1之間）
             xRatio: centerX / realW,
             yRatio: centerY / realH,
             en: item.en,
@@ -349,31 +350,34 @@ function extractTags(fullTextAnnotation, realW, realH) {
   return tags;
 }
 
-function renderTags(tags, imgEl, realW, realH) {
-  const container = document.getElementById('image-container');
+function renderTags(tags, imgEl) {
+  const wrapper = document.getElementById('image-wrapper');
 
-  // 取得圖片在螢幕上實際渲染的寬高
+  // 圖片實際在螢幕上的渲染寬高
   const renderedW = imgEl.offsetWidth;
   const renderedH = imgEl.offsetHeight;
 
-  // 計算圖片在 container 內置中時的偏移量
-  const offsetX = (container.offsetWidth - renderedW) / 2;
-  const offsetY = (container.offsetHeight - renderedH) / 2;
+  // wrapper 的寬高
+  const wrapperW = wrapper.offsetWidth;
+  const wrapperH = wrapper.offsetHeight;
 
-  // 讓 container 高度貼合圖片
-  container.style.height = renderedH + 'px';
+  // 若圖片比 wrapper 小，計算置中偏移
+  const offsetX = (wrapperW - renderedW) / 2;
+  const offsetY = (wrapperH - renderedH) / 2;
 
   for (const tag of tags) {
     const tagEl = document.createElement('div');
     tagEl.className = 'tag';
     tagEl.textContent = tag.en;
 
-    // 用實際渲染尺寸精準換算標籤位置
-    tagEl.style.left = (offsetX + tag.xRatio * renderedW) + 'px';
-    tagEl.style.top = (offsetY + tag.yRatio * renderedH) + 'px';
+    const leftPx = offsetX + tag.xRatio * renderedW;
+    const topPx = offsetY + tag.yRatio * renderedH;
+
+    tagEl.style.left = leftPx + 'px';
+    tagEl.style.top = topPx + 'px';
 
     tagEl.addEventListener('click', () => showModal(tag));
-    container.appendChild(tagEl);
+    wrapper.appendChild(tagEl);
   }
 }
 
