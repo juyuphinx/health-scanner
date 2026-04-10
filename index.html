@@ -7,7 +7,6 @@
   <title>健檢 AR 翻譯機</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #111;
@@ -16,7 +15,6 @@
       display: flex;
       flex-direction: column;
     }
-
     header {
       background: #00897b;
       padding: 14px 20px;
@@ -26,7 +24,6 @@
       align-items: center;
       gap: 10px;
     }
-
     #main {
       flex: 1;
       display: flex;
@@ -35,30 +32,25 @@
       justify-content: center;
       padding: 20px;
     }
-
     #placeholder {
       text-align: center;
       color: #aaa;
       font-size: 16px;
       line-height: 2;
     }
-
     #placeholder .icon { font-size: 60px; margin-bottom: 10px; }
-
     #image-wrapper {
       position: relative;
       display: none;
       width: 100%;
       max-width: 700px;
     }
-
     #preview {
       width: 100%;
       height: auto;
       display: block;
       border-radius: 8px;
     }
-
     .tag {
       position: absolute;
       background: rgba(0, 137, 123, 0.92);
@@ -72,12 +64,8 @@
       cursor: pointer;
       white-space: nowrap;
       box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-      transition: background 0.2s;
       z-index: 10;
     }
-
-    .tag:active { background: rgba(0,105,92,0.95); }
-
     #loading {
       display: none;
       flex-direction: column;
@@ -86,7 +74,6 @@
       color: white;
       font-size: 16px;
     }
-
     .spinner {
       width: 48px; height: 48px;
       border: 5px solid #444;
@@ -94,16 +81,14 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
-
     footer {
       padding: 16px;
       display: flex;
       justify-content: center;
       gap: 12px;
+      flex-wrap: wrap;
     }
-
     .btn {
       background: #00897b;
       color: white;
@@ -117,9 +102,41 @@
       gap: 8px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-
     .btn:active { transform: scale(0.97); }
     .btn.secondary { background: #444; }
+    .btn.debug { background: #c0392b; font-size: 13px; padding: 10px 18px; }
+
+    /* 除錯視窗 */
+    #debug-box {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    #debug-box h3 { color: #00897b; margin-bottom: 12px; font-size: 16px; }
+    #debug-box pre {
+      color: #0f0;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #1a1a1a;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    #debug-close {
+      background: #c0392b;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      width: 100%;
+    }
 
     #modal-overlay {
       display: none;
@@ -131,9 +148,7 @@
       justify-content: center;
       padding: 20px;
     }
-
     #modal-overlay.show { display: flex; }
-
     #modal {
       background: white;
       color: #111;
@@ -143,11 +158,9 @@
       width: 100%;
       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
-
     #modal h2 { color: #00897b; font-size: 20px; margin-bottom: 6px; }
     #modal .cn-label { color: #888; font-size: 13px; margin-bottom: 14px; }
     #modal .info-text { font-size: 15px; line-height: 1.7; }
-
     #modal-close {
       margin-top: 20px;
       width: 100%;
@@ -171,12 +184,10 @@
     <div>請點擊下方按鈕</div>
     <div>拍攝或上傳健檢報告</div>
   </div>
-
   <div id="loading">
     <div class="spinner"></div>
     <div>AI 辨識分析中...</div>
   </div>
-
   <div id="image-wrapper">
     <img id="preview" alt="健檢報告" />
   </div>
@@ -185,9 +196,17 @@
 <footer>
   <button class="btn" onclick="triggerCamera()">📷 拍照掃描</button>
   <button class="btn secondary" id="reset-btn" style="display:none" onclick="resetApp()">🔄 重新掃描</button>
+  <button class="btn debug" id="debug-btn" style="display:none" onclick="showDebug()">🔍 除錯資訊</button>
 </footer>
 
 <input type="file" id="file-input" accept="image/*" capture="environment" style="display:none" onchange="handleFile(event)" />
+
+<!-- 除錯視窗 -->
+<div id="debug-box">
+  <h3>🔍 除錯資訊（請截圖傳給我）</h3>
+  <pre id="debug-content"></pre>
+  <button id="debug-close" onclick="document.getElementById('debug-box').style.display='none'">關閉</button>
+</div>
 
 <div id="modal-overlay">
   <div id="modal">
@@ -213,6 +232,8 @@ const healthItems = [
   { cn: "眼壓", en: "Eye Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
 ];
 
+let debugData = {};
+
 function triggerCamera() {
   document.getElementById('file-input').click();
 }
@@ -221,7 +242,14 @@ function resetApp() {
   document.getElementById('image-wrapper').style.display = 'none';
   document.getElementById('placeholder').style.display = 'block';
   document.getElementById('reset-btn').style.display = 'none';
+  document.getElementById('debug-btn').style.display = 'none';
   document.querySelectorAll('.tag').forEach(t => t.remove());
+  debugData = {};
+}
+
+function showDebug() {
+  document.getElementById('debug-content').textContent = JSON.stringify(debugData, null, 2);
+  document.getElementById('debug-box').style.display = 'block';
 }
 
 async function handleFile(event) {
@@ -247,20 +275,29 @@ async function handleFile(event) {
   const realW = imgEl.naturalWidth;
   const realH = imgEl.naturalHeight;
 
+  // 記錄圖片資訊
+  debugData.imageInfo = { realW, realH };
+
   try {
     const base64 = await fileToBase64(file);
-    const tags = await callVisionApi(base64, realW, realH);
+    const { tags, rawParagraphs } = await callVisionApi(base64, realW, realH);
+
+    // 記錄原始段落資訊
+    debugData.rawParagraphs = rawParagraphs;
+    debugData.matchedTags = tags;
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('image-wrapper').style.display = 'block';
+    document.getElementById('debug-btn').style.display = 'flex';
 
-    // 等圖片完全渲染後再放標籤
     await new Promise(resolve => setTimeout(resolve, 400));
     renderTags(tags, imgEl);
 
   } catch(e) {
+    debugData.error = e.message;
     document.getElementById('loading').style.display = 'none';
     document.getElementById('image-wrapper').style.display = 'block';
+    document.getElementById('debug-btn').style.display = 'flex';
     alert('辨識失敗：' + e.message);
   }
 
@@ -295,16 +332,17 @@ async function callVisionApi(base64, realW, realH) {
 
   const data = await res.json();
   const response = data.responses?.[0];
-  if (!response?.fullTextAnnotation) return [];
+  if (!response?.fullTextAnnotation) return { tags: [], rawParagraphs: [] };
 
   return extractTags(response.fullTextAnnotation, realW, realH);
 }
 
 function extractTags(fullTextAnnotation, realW, realH) {
   const tags = [];
+  const rawParagraphs = [];
   const tagged = new Set();
   const pages = fullTextAnnotation.pages || [];
-  if (!pages.length) return tags;
+  if (!pages.length) return { tags, rawParagraphs };
 
   for (const block of pages[0].blocks || []) {
     for (const paragraph of block.paragraphs || []) {
@@ -331,11 +369,19 @@ function extractTags(fullTextAnnotation, realW, realH) {
       const centerX = (minX + maxX) / 2;
       const centerY = (minY + maxY) / 2;
 
+      // 記錄所有段落的原始資料
+      rawParagraphs.push({
+        text: lineText,
+        minX, minY, maxX, maxY,
+        centerX, centerY,
+        xRatio: +(centerX / realW).toFixed(4),
+        yRatio: +(centerY / realH).toFixed(4)
+      });
+
       for (const item of healthItems) {
         if (!tagged.has(item.cn) && item.cn && lineText.includes(item.cn)) {
           tagged.add(item.cn);
           tags.push({
-            // 儲存比例值（0~1之間）
             xRatio: centerX / realW,
             yRatio: centerY / realH,
             en: item.en,
@@ -347,35 +393,29 @@ function extractTags(fullTextAnnotation, realW, realH) {
       }
     }
   }
-  return tags;
+  return { tags, rawParagraphs };
 }
 
 function renderTags(tags, imgEl) {
   const wrapper = document.getElementById('image-wrapper');
-
-  // 圖片實際在螢幕上的渲染寬高
   const renderedW = imgEl.offsetWidth;
   const renderedH = imgEl.offsetHeight;
-
-  // wrapper 的寬高
   const wrapperW = wrapper.offsetWidth;
   const wrapperH = wrapper.offsetHeight;
-
-  // 若圖片比 wrapper 小，計算置中偏移
   const offsetX = (wrapperW - renderedW) / 2;
   const offsetY = (wrapperH - renderedH) / 2;
+
+  // 記錄渲染資訊
+  debugData.renderInfo = { renderedW, renderedH, wrapperW, wrapperH, offsetX, offsetY };
 
   for (const tag of tags) {
     const tagEl = document.createElement('div');
     tagEl.className = 'tag';
     tagEl.textContent = tag.en;
-
     const leftPx = offsetX + tag.xRatio * renderedW;
     const topPx = offsetY + tag.yRatio * renderedH;
-
     tagEl.style.left = leftPx + 'px';
     tagEl.style.top = topPx + 'px';
-
     tagEl.addEventListener('click', () => showModal(tag));
     wrapper.appendChild(tagEl);
   }
