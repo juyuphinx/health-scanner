@@ -104,40 +104,6 @@
     }
     .btn:active { transform: scale(0.97); }
     .btn.secondary { background: #444; }
-    .btn.debug { background: #c0392b; font-size: 13px; padding: 10px 18px; }
-
-    /* 除錯視窗 */
-    #debug-box {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.85);
-      z-index: 200;
-      overflow-y: auto;
-      padding: 20px;
-    }
-    #debug-box h3 { color: #00897b; margin-bottom: 12px; font-size: 16px; }
-    #debug-box pre {
-      color: #0f0;
-      font-size: 11px;
-      white-space: pre-wrap;
-      word-break: break-all;
-      background: #1a1a1a;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-    }
-    #debug-close {
-      background: #c0392b;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 12px 24px;
-      font-size: 16px;
-      cursor: pointer;
-      width: 100%;
-    }
-
     #modal-overlay {
       display: none;
       position: fixed;
@@ -196,17 +162,9 @@
 <footer>
   <button class="btn" onclick="triggerCamera()">📷 拍照掃描</button>
   <button class="btn secondary" id="reset-btn" style="display:none" onclick="resetApp()">🔄 重新掃描</button>
-  <button class="btn debug" id="debug-btn" style="display:none" onclick="showDebug()">🔍 除錯資訊</button>
 </footer>
 
 <input type="file" id="file-input" accept="image/*" capture="environment" style="display:none" onchange="handleFile(event)" />
-
-<!-- 除錯視窗 -->
-<div id="debug-box">
-  <h3>🔍 除錯資訊（請截圖傳給我）</h3>
-  <pre id="debug-content"></pre>
-  <button id="debug-close" onclick="document.getElementById('debug-box').style.display='none'">關閉</button>
-</div>
 
 <div id="modal-overlay">
   <div id="modal">
@@ -232,8 +190,6 @@ const healthItems = [
   { cn: "眼壓", en: "Eye Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
 ];
 
-let debugData = {};
-
 function triggerCamera() {
   document.getElementById('file-input').click();
 }
@@ -242,14 +198,7 @@ function resetApp() {
   document.getElementById('image-wrapper').style.display = 'none';
   document.getElementById('placeholder').style.display = 'block';
   document.getElementById('reset-btn').style.display = 'none';
-  document.getElementById('debug-btn').style.display = 'none';
   document.querySelectorAll('.tag').forEach(t => t.remove());
-  debugData = {};
-}
-
-function showDebug() {
-  document.getElementById('debug-content').textContent = JSON.stringify(debugData, null, 2);
-  document.getElementById('debug-box').style.display = 'block';
 }
 
 async function handleFile(event) {
@@ -275,29 +224,19 @@ async function handleFile(event) {
   const realW = imgEl.naturalWidth;
   const realH = imgEl.naturalHeight;
 
-  // 記錄圖片資訊
-  debugData.imageInfo = { realW, realH };
-
   try {
     const base64 = await fileToBase64(file);
-    const { tags, rawParagraphs } = await callVisionApi(base64, realW, realH);
-
-    // 記錄原始段落資訊
-    debugData.rawParagraphs = rawParagraphs;
-    debugData.matchedTags = tags;
+    const tags = await callVisionApi(base64, realW, realH);
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('image-wrapper').style.display = 'block';
-    document.getElementById('debug-btn').style.display = 'flex';
 
-    await new Promise(resolve => setTimeout(resolve, 400));
-    renderTags(tags, imgEl);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    renderTags(tags, imgEl, realW, realH);
 
   } catch(e) {
-    debugData.error = e.message;
     document.getElementById('loading').style.display = 'none';
     document.getElementById('image-wrapper').style.display = 'block';
-    document.getElementById('debug-btn').style.display = 'flex';
     alert('辨識失敗：' + e.message);
   }
 
@@ -332,17 +271,16 @@ async function callVisionApi(base64, realW, realH) {
 
   const data = await res.json();
   const response = data.responses?.[0];
-  if (!response?.fullTextAnnotation) return { tags: [], rawParagraphs: [] };
+  if (!response?.fullTextAnnotation) return [];
 
   return extractTags(response.fullTextAnnotation, realW, realH);
 }
 
 function extractTags(fullTextAnnotation, realW, realH) {
   const tags = [];
-  const rawParagraphs = [];
   const tagged = new Set();
   const pages = fullTextAnnotation.pages || [];
-  if (!pages.length) return { tags, rawParagraphs };
+  if (!pages.length) return tags;
 
   for (const block of pages[0].blocks || []) {
     for (const paragraph of block.paragraphs || []) {
@@ -369,21 +307,13 @@ function extractTags(fullTextAnnotation, realW, realH) {
       const centerX = (minX + maxX) / 2;
       const centerY = (minY + maxY) / 2;
 
-      // 記錄所有段落的原始資料
-      rawParagraphs.push({
-        text: lineText,
-        minX, minY, maxX, maxY,
-        centerX, centerY,
-        xRatio: +(centerX / realW).toFixed(4),
-        yRatio: +(centerY / realH).toFixed(4)
-      });
-
       for (const item of healthItems) {
         if (!tagged.has(item.cn) && item.cn && lineText.includes(item.cn)) {
           tagged.add(item.cn);
           tags.push({
-            xRatio: centerX / realW,
-            yRatio: centerY / realH,
+            // ✅ 直接儲存原始像素座標，不換算比例
+            pixelX: centerX,
+            pixelY: centerY,
             en: item.en,
             cn: item.cn,
             info: item.info
@@ -393,29 +323,32 @@ function extractTags(fullTextAnnotation, realW, realH) {
       }
     }
   }
-  return { tags, rawParagraphs };
+  return tags;
 }
 
-function renderTags(tags, imgEl) {
+function renderTags(tags, imgEl, realW, realH) {
   const wrapper = document.getElementById('image-wrapper');
+
+  // 圖片在螢幕上實際顯示的寬高
   const renderedW = imgEl.offsetWidth;
   const renderedH = imgEl.offsetHeight;
-  const wrapperW = wrapper.offsetWidth;
-  const wrapperH = wrapper.offsetHeight;
-  const offsetX = (wrapperW - renderedW) / 2;
-  const offsetY = (wrapperH - renderedH) / 2;
 
-  // 記錄渲染資訊
-  debugData.renderInfo = { renderedW, renderedH, wrapperW, wrapperH, offsetX, offsetY };
+  // 原始照片和螢幕顯示的縮放比例
+  const scaleX = renderedW / realW;
+  const scaleY = renderedH / realH;
 
   for (const tag of tags) {
     const tagEl = document.createElement('div');
     tagEl.className = 'tag';
     tagEl.textContent = tag.en;
-    const leftPx = offsetX + tag.xRatio * renderedW;
-    const topPx = offsetY + tag.yRatio * renderedH;
+
+    // ✅ 用縮放比例直接換算像素位置，最精準
+    const leftPx = tag.pixelX * scaleX;
+    const topPx = tag.pixelY * scaleY;
+
     tagEl.style.left = leftPx + 'px';
     tagEl.style.top = topPx + 'px';
+
     tagEl.addEventListener('click', () => showModal(tag));
     wrapper.appendChild(tagEl);
   }
