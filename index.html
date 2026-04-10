@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#00897b" />
+  <title>健檢 AR 翻譯機</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111;
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #00897b;
+      padding: 14px 20px;
+      font-size: 18px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    #placeholder {
+      text-align: center;
+      color: #aaa;
+      font-size: 16px;
+      line-height: 2;
+    }
+
+    #placeholder .icon { font-size: 60px; margin-bottom: 10px; }
+
+    #image-container {
+      position: relative;
+      display: none;
+      width: 100%;
+      max-width: 700px;
+    }
+
+    #preview {
+      width: 100%;
+      display: block;
+      border-radius: 8px;
+    }
+
+    .tag {
+      position: absolute;
+      background: rgba(0, 137, 123, 0.92);
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1.5px solid white;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      transition: background 0.2s;
+    }
+
+    .tag:hover { background: rgba(0,105,92,0.95); }
+
+    #loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      color: white;
+      font-size: 16px;
+    }
+
+    .spinner {
+      width: 48px; height: 48px;
+      border: 5px solid #444;
+      border-top-color: #00897b;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .btn {
+      background: #00897b;
+      color: white;
+      border: none;
+      border-radius: 28px;
+      padding: 14px 28px;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .btn:active { transform: scale(0.97); }
+    .btn.secondary { background: #444; }
+
+    /* Modal 說明彈窗 */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    #modal-overlay.show { display: flex; }
+
+    #modal {
+      background: white;
+      color: #111;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    #modal h2 { color: #00897b; font-size: 20px; margin-bottom: 6px; }
+    #modal .cn-label { color: #888; font-size: 13px; margin-bottom: 14px; }
+    #modal .info-text { font-size: 15px; line-height: 1.7; }
+
+    #modal-close {
+      margin-top: 20px;
+      width: 100%;
+      background: #00897b;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<header>🩺 健檢 AR 翻譯機</header>
+
+<div id="main">
+  <div id="placeholder">
+    <div class="icon">📋</div>
+    <div>請點擊下方按鈕</div>
+    <div>拍攝或上傳健檢報告</div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>AI 辨識分析中...</div>
+  </div>
+
+  <div id="image-container">
+    <img id="preview" alt="健檢報告" />
+    <!-- 標籤會動態插入這裡 -->
+  </div>
+</div>
+
+<footer>
+  <button class="btn" onclick="triggerCamera()">📷 拍照掃描</button>
+  <button class="btn secondary" id="reset-btn" style="display:none" onclick="resetApp()">🔄 重新掃描</button>
+</footer>
+
+<!-- 隱藏的 input 讓手機可以拍照或選照片 -->
+<input type="file" id="file-input" accept="image/*" capture="environment" style="display:none" onchange="handleFile(event)" />
+
+<!-- 說明彈窗 -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-en"></h2>
+    <div class="cn-label" id="modal-cn"></div>
+    <div class="info-text" id="modal-info"></div>
+    <button id="modal-close" onclick="closeModal()">關閉</button>
+  </div>
+</div>
+
+<script>
+// ==========================================
+// 🔑 你的 Google Vision API 金鑰
+// ==========================================
+const API_KEY = 'AIzaSyCw_6UnvjCmeUd-sLmaSWFrMQWrgff9i_8';
+
+// ==========================================
+// 健檢項目資料（從 data.json 整合進來）
+// ==========================================
+const healthItems = [
+  { cn: "身高體重", en: "Height and Weight", info: "Measurement of body stature and mass to calculate BMI. (測量身體維度以評估發育與 BMI。)" },
+  { cn: "心電圖", en: "Electrocardiogram (ECG/EKG)", info: "A test that records the electrical activity of your heart. (記錄心臟電訊號以檢查異常心律。)" },
+  { cn: "骨質密度", en: "Bone Mineral Density (BMD)", info: "Measures bone strength to assess risk of osteoporosis. (測量骨骼強度以評估骨質疏鬆風險。)" },
+  { cn: "血壓", en: "Blood Pressure Measurement", info: "Checks the force of blood against artery walls to detect hypertension. (測量血液對血管壁的壓力以偵測高血壓。)" },
+  { cn: "視力檢查", en: "Vision Test", info: "Evaluates visual clarity and detects vision problems. (評估視力清晰度並檢測視覺問題。)" },
+  { cn: "胸部X光", en: "Chest X-ray", info: "Examines lungs and chest structures for infections or abnormalities. (檢查肺部與胸腔結構是否有感染或異常。)" },
+  { cn: "腹部超音波", en: "Abdominal Ultrasound", info: "Uses sound waves to visualize abdominal organs like the liver and kidneys. (利用聲波觀察肝臟、腎臟等腹部器官。)" },
+  { cn: "肺功能檢查", en: "Pulmonary Function Test", info: "Evaluates lung capacity and airflow to assess respiratory health. (評估肺活量與氣流以了解呼吸系統健康。)" },
+  { cn: "眼壓", en: "Intraocular Pressure Test", info: "Measures eye pressure to screen for glaucoma. (測量眼內壓力以篩檢青光眼。)" }
+];
+
+// ==========================================
+// 主要功能
+// ==========================================
+
+function triggerCamera() {
+  document.getElementById('file-input').click();
+}
+
+function resetApp() {
+  document.getElementById('image-container').style.display = 'none';
+  document.getElementById('placeholder').style.display = 'block';
+  document.getElementById('reset-btn').style.display = 'none';
+  // 清除所有標籤
+  document.querySelectorAll('.tag').forEach(t => t.remove());
+}
+
+async function handleFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // 顯示預覽圖
+  const url = URL.createObjectURL(file);
+  const imgEl = document.getElementById('preview');
+  imgEl.src = url;
+
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('image-container').style.display = 'block';
+  document.getElementById('reset-btn').style.display = 'flex';
+
+  // 清除舊標籤
+  document.querySelectorAll('.tag').forEach(t => t.remove());
+
+  // 顯示 loading
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('image-container').style.display = 'none';
+
+  // 等圖片載入完成，取得真實尺寸
+  await new Promise(resolve => {
+    imgEl.onload = resolve;
+    if (imgEl.complete) resolve();
+  });
+
+  const realW = imgEl.naturalWidth;
+  const realH = imgEl.naturalHeight;
+
+  // 呼叫 Google Vision API
+  try {
+    const base64 = await fileToBase64(file);
+    const tags = await callVisionApi(base64, realW, realH);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('image-container').style.display = 'block';
+
+    // 等畫面渲染後再放標籤（確保 img 尺寸正確）
+    requestAnimationFrame(() => {
+      renderTags(tags, imgEl, realW, realH);
+    });
+
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('image-container').style.display = 'block';
+    alert('辨識失敗，請確認網路連線或 API 金鑰是否正確。\n錯誤：' + e.message);
+  }
+
+  // 重置 input 讓同一張圖可以重新選
+  event.target.value = '';
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callVisionApi(base64, realW, realH) {
+  const res = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { content: base64 },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
+        }]
+      })
+    }
+  );
+
+  if (!res.ok) throw new Error('API 回應錯誤：' + res.status);
+
+  const data = await res.json();
+  const response = data.responses?.[0];
+  if (!response?.fullTextAnnotation) return [];
+
+  return extractTags(response.fullTextAnnotation, realW, realH);
+}
+
+function extractTags(fullTextAnnotation, realW, realH) {
+  const tags = [];
+  const tagged = new Set();
+  const pages = fullTextAnnotation.pages || [];
+  if (!pages.length) return tags;
+
+  for (const block of pages[0].blocks || []) {
+    for (const paragraph of block.paragraphs || []) {
+      let lineText = '';
+      for (const word of paragraph.words || []) {
+        for (const symbol of word.symbols || []) {
+          lineText += symbol.text;
+        }
+      }
+
+      const vertices = paragraph.boundingBox?.vertices;
+      if (!vertices) continue;
+
+      let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+      for (const v of vertices) {
+        const x = v.x || 0, y = v.y || 0;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      for (const item of healthItems) {
+        if (!tagged.has(item.cn) && item.cn && lineText.includes(item.cn)) {
+          tagged.add(item.cn);
+          tags.push({
+            xRatio: centerX / realW,
+            yRatio: centerY / realH,
+            en: item.en,
+            cn: item.cn,
+            info: item.info
+          });
+          break;
+        }
+      }
+    }
+  }
+  return tags;
+}
+
+function renderTags(tags, imgEl, realW, realH) {
+  const container = document.getElementById('image-container');
+
+  // 計算圖片實際渲染尺寸（保持比例）
+  const containerW = container.offsetWidth;
+  const scale = containerW / realW;
+  const renderedH = realH * scale;
+
+  // 強制 container 高度對齊圖片
+  container.style.height = renderedH + 'px';
+
+  for (const tag of tags) {
+    const tagEl = document.createElement('div');
+    tagEl.className = 'tag';
+    tagEl.textContent = tag.en;
+    tagEl.style.left = (tag.xRatio * 100) + '%';
+    tagEl.style.top = (tag.yRatio * renderedH) + 'px';
+    tagEl.addEventListener('click', () => showModal(tag));
+    container.appendChild(tagEl);
+  }
+}
+
+// ==========================================
+// 說明彈窗
+// ==========================================
+function showModal(tag) {
+  document.getElementById('modal-en').textContent = tag.en;
+  document.getElementById('modal-cn').textContent = '中文項目：' + tag.cn;
+  document.getElementById('modal-info').textContent = tag.info;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+// 點擊背景關閉
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+
+</body>
+</html>
